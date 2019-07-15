@@ -1,15 +1,15 @@
 import os
 
+import distributed
 import numpy as np
 import torch
-from tensorboardX import SummaryWriter
 
-import distributed
 # import onmt
 from models.reporter import ReportMgr
 from models.stats import Statistics
 from others.logging import logger
-from others.utils import test_rouge, rouge_results_to_str
+from others.utils import rouge_results_to_str, test_rouge
+from tensorboardX import SummaryWriter
 
 
 def _tally_parameters(model):
@@ -17,8 +17,7 @@ def _tally_parameters(model):
     return n_params
 
 
-def build_trainer(args, device_id, model,
-                  optim):
+def build_trainer(args, device_id, model, optim):
     """
     Simplify `Trainer` creation based on user `opt`s*
     Args:
@@ -32,7 +31,6 @@ def build_trainer(args, device_id, model,
             used to save the model
     """
     device = "cpu" if args.visible_gpus == '-1' else "cuda"
-
 
     grad_accum_count = args.accum_count
     n_gpu = args.world_size
@@ -49,9 +47,11 @@ def build_trainer(args, device_id, model,
 
     writer = SummaryWriter(tensorboard_log_dir, comment="Unmt")
 
-    report_manager = ReportMgr(args.report_every, start_time=-1, tensorboard_writer=writer)
+    report_manager = ReportMgr(
+        args.report_every, start_time=-1, tensorboard_writer=writer)
 
-    trainer = Trainer(args, model, optim, grad_accum_count, n_gpu, gpu_rank, report_manager)
+    trainer = Trainer(args, model, optim, grad_accum_count, n_gpu, gpu_rank,
+                      report_manager)
 
     # print(tr)
     if (model):
@@ -86,9 +86,14 @@ class Trainer(object):
                 Thus nothing will be saved if this parameter is None
     """
 
-    def __init__(self,  args, model,  optim,
-                  grad_accum_count=1, n_gpu=1, gpu_rank=1,
-                  report_manager=None):
+    def __init__(self,
+                 args,
+                 model,
+                 optim,
+                 grad_accum_count=1,
+                 n_gpu=1,
+                 gpu_rank=1,
+                 report_manager=None):
         # Basic attributes.
         self.args = args
         self.save_checkpoint_steps = args.save_checkpoint_steps
@@ -105,7 +110,11 @@ class Trainer(object):
         if (model):
             self.model.train()
 
-    def train(self, train_iter_fct, train_steps, valid_iter_fct=None, valid_steps=-1):
+    def train(self,
+              train_iter_fct,
+              train_steps,
+              valid_iter_fct=None,
+              valid_steps=-1):
         """
         The main training loops.
         by iterating over training data (i.e. `train_iter_fct`)
@@ -126,7 +135,7 @@ class Trainer(object):
         logger.info('Start training...')
 
         # step =  self.optim._step + 1
-        step =  self.optim._step + 1
+        step = self.optim._step + 1
         true_batchs = []
         accum = 0
         normalization = 0
@@ -148,23 +157,21 @@ class Trainer(object):
                     if accum == self.grad_accum_count:
                         reduce_counter += 1
                         if self.n_gpu > 1:
-                            normalization = sum(distributed
-                                                .all_gather_list
-                                                (normalization))
+                            normalization = sum(
+                                distributed.all_gather_list(normalization))
 
-                        self._gradient_accumulation(
-                            true_batchs, normalization, total_stats,
-                            report_stats)
+                        self._gradient_accumulation(true_batchs, normalization,
+                                                    total_stats, report_stats)
 
                         report_stats = self._maybe_report_training(
-                            step, train_steps,
-                            self.optim.learning_rate,
+                            step, train_steps, self.optim.learning_rate,
                             report_stats)
 
                         true_batchs = []
                         accum = 0
                         normalization = 0
-                        if (step % self.save_checkpoint_steps == 0 and self.gpu_rank == 0):
+                        if (step % self.save_checkpoint_steps == 0
+                                and self.gpu_rank == 0):
                             self._save(step)
 
                         step += 1
@@ -196,10 +203,10 @@ class Trainer(object):
 
                 sent_scores, mask = self.model(src, segs, clss, mask, mask_cls)
 
-
                 loss = self.loss(sent_scores, labels.float())
                 loss = (loss * mask.float()).sum()
-                batch_stats = Statistics(float(loss.cpu().data.numpy()), len(labels))
+                batch_stats = Statistics(
+                    float(loss.cpu().data.numpy()), len(labels))
                 stats.update(batch_stats)
             self._report_step(0, step, valid_stats=stats)
             return stats
@@ -210,6 +217,7 @@ class Trainer(object):
         Returns:
             :obj:`nmt.Statistics`: validation loss statistics
         """
+
         # Set model in validating mode.
         def _get_ngrams(n, text):
             ngram_set = set()
@@ -223,7 +231,7 @@ class Trainer(object):
             tri_c = _get_ngrams(3, c.split())
             for s in p:
                 tri_s = _get_ngrams(3, s.split())
-                if len(tri_c.intersection(tri_s))>0:
+                if len(tri_c.intersection(tri_s)) > 0:
                     return True
             return False
 
@@ -231,10 +239,10 @@ class Trainer(object):
             self.model.eval()
         stats = Statistics()
 
-        can_path = '%s_step%d.candidate'%(self.args.result_path,step)
+        can_path = '%s_step%d.candidate' % (self.args.result_path, step)
         gold_path = '%s_step%d.gold' % (self.args.result_path, step)
-        with open(can_path, 'w') as save_pred:
-            with open(gold_path, 'w') as save_gold:
+        with open(can_path, 'w', encoding='utf-8') as save_pred:
+            with open(gold_path, 'w', encoding='utf-8') as save_gold:
                 with torch.no_grad():
                     for batch in test_iter:
                         src = batch.src
@@ -244,21 +252,25 @@ class Trainer(object):
                         mask = batch.mask
                         mask_cls = batch.mask_cls
 
-
                         gold = []
                         pred = []
 
                         if (cal_lead):
-                            selected_ids = [list(range(batch.clss.size(1)))] * batch.batch_size
+                            selected_ids = [list(range(batch.clss.size(1)))
+                                            ] * batch.batch_size
                         elif (cal_oracle):
-                            selected_ids = [[j for j in range(batch.clss.size(1)) if labels[i][j] == 1] for i in
-                                            range(batch.batch_size)]
+                            selected_ids = [[
+                                j for j in range(batch.clss.size(1))
+                                if labels[i][j] == 1
+                            ] for i in range(batch.batch_size)]
                         else:
-                            sent_scores, mask = self.model(src, segs, clss, mask, mask_cls)
+                            sent_scores, mask = self.model(
+                                src, segs, clss, mask, mask_cls)
 
                             loss = self.loss(sent_scores, labels.float())
                             loss = (loss * mask.float()).sum()
-                            batch_stats = Statistics(float(loss.cpu().data.numpy()), len(labels))
+                            batch_stats = Statistics(
+                                float(loss.cpu().data.numpy()), len(labels))
                             stats.update(batch_stats)
 
                             sent_scores = sent_scores + mask.float()
@@ -267,40 +279,43 @@ class Trainer(object):
                         # selected_ids = np.sort(selected_ids,1)
                         for i, idx in enumerate(selected_ids):
                             _pred = []
-                            if(len(batch.src_str[i])==0):
+                            if (len(batch.src_str[i]) == 0):
                                 continue
                             for j in selected_ids[i][:len(batch.src_str[i])]:
-                                if(j>=len( batch.src_str[i])):
+                                if (j >= len(batch.src_str[i])):
                                     continue
                                 candidate = batch.src_str[i][j].strip()
-                                if(self.args.block_trigram):
-                                    if(not _block_tri(candidate,_pred)):
+                                if (self.args.block_trigram):
+                                    if (not _block_tri(candidate, _pred)):
                                         _pred.append(candidate)
                                 else:
                                     _pred.append(candidate)
 
-                                if ((not cal_oracle) and (not self.args.recall_eval) and len(_pred) == 3):
+                                if ((not cal_oracle)
+                                        and (not self.args.recall_eval)
+                                        and len(_pred) == 3):
                                     break
 
                             _pred = '<q>'.join(_pred)
-                            if(self.args.recall_eval):
-                                _pred = ' '.join(_pred.split()[:len(batch.tgt_str[i].split())])
+                            if (self.args.recall_eval):
+                                _pred = ' '.join(_pred.split()[:len(
+                                    batch.tgt_str[i].split())])
 
                             pred.append(_pred)
                             gold.append(batch.tgt_str[i])
 
                         for i in range(len(gold)):
-                            save_gold.write(gold[i].strip()+'\n')
+                            save_gold.write(gold[i].strip() + '\n')
                         for i in range(len(pred)):
-                            save_pred.write(pred[i].strip()+'\n')
-        if(step!=-1 and self.args.report_rouge):
-            rouges = test_rouge(self.args.temp_dir, can_path, gold_path)
-            logger.info('Rouges at step %d \n%s' % (step, rouge_results_to_str(rouges)))
+                            save_pred.write(pred[i].strip() + '\n')
+        if (step != -1 and self.args.report_rouge):
+            rouges = test_rouge(self.args.temp_dir, can_path, gold_path,
+                                self.args.rouge_dir)
+            logger.info('Rouges at step %d \n%s' %
+                        (step, rouge_results_to_str(rouges)))
         self._report_step(0, step, valid_stats=stats)
 
         return stats
-
-
 
     def _gradient_accumulation(self, true_batchs, normalization, total_stats,
                                report_stats):
@@ -321,12 +336,12 @@ class Trainer(object):
             sent_scores, mask = self.model(src, segs, clss, mask, mask_cls)
 
             loss = self.loss(sent_scores, labels.float())
-            loss = (loss*mask.float()).sum()
-            (loss/loss.numel()).backward()
+            loss = (loss * mask.float()).sum()
+            (loss / loss.numel()).backward()
             # loss.div(float(normalization)).backward()
 
-            batch_stats = Statistics(float(loss.cpu().data.numpy()), normalization)
-
+            batch_stats = Statistics(
+                float(loss.cpu().data.numpy()), normalization)
 
             total_stats.update(batch_stats)
             report_stats.update(batch_stats)
@@ -335,22 +350,22 @@ class Trainer(object):
             if self.grad_accum_count == 1:
                 # Multi GPU gradient gather
                 if self.n_gpu > 1:
-                    grads = [p.grad.data for p in self.model.parameters()
-                             if p.requires_grad
-                             and p.grad is not None]
-                    distributed.all_reduce_and_rescale_tensors(
-                        grads, float(1))
+                    grads = [
+                        p.grad.data for p in self.model.parameters()
+                        if p.requires_grad and p.grad is not None
+                    ]
+                    distributed.all_reduce_and_rescale_tensors(grads, float(1))
                 self.optim.step()
 
         # in case of multi step gradient accumulation,
         # update only after accum batches
         if self.grad_accum_count > 1:
             if self.n_gpu > 1:
-                grads = [p.grad.data for p in self.model.parameters()
-                         if p.requires_grad
-                         and p.grad is not None]
-                distributed.all_reduce_and_rescale_tensors(
-                    grads, float(1))
+                grads = [
+                    p.grad.data for p in self.model.parameters()
+                    if p.requires_grad and p.grad is not None
+                ]
+                distributed.all_reduce_and_rescale_tensors(grads, float(1))
             self.optim.step()
 
     def _save(self, step):
@@ -367,7 +382,8 @@ class Trainer(object):
             'opt': self.args,
             'optim': self.optim,
         }
-        checkpoint_path = os.path.join(self.args.model_path, 'model_step_%d.pt' % step)
+        checkpoint_path = os.path.join(self.args.model_path,
+                                       'model_step_%d.pt' % step)
         logger.info("Saving checkpoint %s" % checkpoint_path)
         # checkpoint_path = '%s_step_%d.pt' % (FLAGS.model_path, step)
         if (not os.path.exists(checkpoint_path)):
@@ -407,10 +423,16 @@ class Trainer(object):
         """
         if self.report_manager is not None:
             return self.report_manager.report_training(
-                step, num_steps, learning_rate, report_stats,
+                step,
+                num_steps,
+                learning_rate,
+                report_stats,
                 multigpu=self.n_gpu > 1)
 
-    def _report_step(self, learning_rate, step, train_stats=None,
+    def _report_step(self,
+                     learning_rate,
+                     step,
+                     train_stats=None,
                      valid_stats=None):
         """
         Simple function to report stats (if report_manager is set)
@@ -418,7 +440,9 @@ class Trainer(object):
         """
         if self.report_manager is not None:
             return self.report_manager.report_step(
-                learning_rate, step, train_stats=train_stats,
+                learning_rate,
+                step,
+                train_stats=train_stats,
                 valid_stats=valid_stats)
 
     def _maybe_save(self, step):

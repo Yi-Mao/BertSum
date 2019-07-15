@@ -22,7 +22,7 @@ def load_json(p, lower):
     source = []
     tgt = []
     flag = False
-    for sent in json.load(open(p))['sentences']:
+    for sent in json.load(open(p, encoding='utf-8'))['sentences']:
         tokens = [t['word'] for t in sent['tokens']]
         if (lower):
             tokens = [t.lower() for t in tokens]
@@ -77,7 +77,8 @@ def combination_selection(doc_sent_list, abstract_sent_list, summary_size):
 
     impossible_sents = []
     for s in range(summary_size + 1):
-        combinations = itertools.combinations([i for i in range(len(sents)) if i not in impossible_sents], s + 1)
+        combinations = itertools.combinations(
+            [i for i in range(len(sents)) if i not in impossible_sents], s + 1)
         for c in combinations:
             candidates_1 = [evaluated_1grams[idx] for idx in c]
             candidates_1 = set.union(*map(set, candidates_1))
@@ -144,7 +145,8 @@ def hashhex(s):
 class BertData():
     def __init__(self, args):
         self.args = args
-        self.tokenizer = BertTokenizer.from_pretrained('bert-base-uncased', do_lower_case=True)
+        self.tokenizer = BertTokenizer.from_pretrained(
+            'bert-base-uncased', do_lower_case=True)
         self.sep_vid = self.tokenizer.vocab['[SEP]']
         self.cls_vid = self.tokenizer.vocab['[CLS]']
         self.pad_vid = self.tokenizer.vocab['[PAD]']
@@ -160,7 +162,10 @@ class BertData():
         for l in oracle_ids:
             labels[l] = 1
 
-        idxs = [i for i, s in enumerate(src) if (len(s) > self.args.min_src_ntokens)]
+        idxs = [
+            i for i, s in enumerate(src)
+            if (len(s) > self.args.min_src_ntokens)
+        ]
 
         src = [src[i][:self.args.max_src_ntokens] for i in idxs]
         labels = [labels[i] for i in idxs]
@@ -181,7 +186,9 @@ class BertData():
         src_subtokens = ['[CLS]'] + src_subtokens + ['[SEP]']
 
         src_subtoken_idxs = self.tokenizer.convert_tokens_to_ids(src_subtokens)
-        _segs = [-1] + [i for i, t in enumerate(src_subtoken_idxs) if t == self.sep_vid]
+        _segs = [-1] + [
+            i for i, t in enumerate(src_subtoken_idxs) if t == self.sep_vid
+        ]
         segs = [_segs[i] - _segs[i - 1] for i in range(1, len(_segs))]
         segments_ids = []
         for i, s in enumerate(segs):
@@ -189,7 +196,9 @@ class BertData():
                 segments_ids += s * [0]
             else:
                 segments_ids += s * [1]
-        cls_ids = [i for i, t in enumerate(src_subtoken_idxs) if t == self.cls_vid]
+        cls_ids = [
+            i for i, t in enumerate(src_subtoken_idxs) if t == self.cls_vid
+        ]
         labels = labels[:len(cls_ids)]
 
         tgt_txt = '<q>'.join([' '.join(tt) for tt in tgt])
@@ -204,9 +213,12 @@ def format_to_bert(args):
         datasets = ['train', 'valid', 'test']
     for corpus_type in datasets:
         a_lst = []
-        for json_f in glob.glob(pjoin(args.raw_path, '*' + corpus_type + '.*.json')):
+        for json_f in glob.glob(
+                pjoin(args.raw_path, '*' + corpus_type + '.*.json')):
             real_name = json_f.split('/')[-1]
-            a_lst.append((json_f, args, pjoin(args.save_path, real_name.replace('json', 'bert.pt'))))
+            a_lst.append((json_f, args, pjoin(args.save_path,
+                                              real_name.replace(
+                                                  'json', 'bert.pt'))))
         print(a_lst)
         pool = Pool(args.n_cpus)
         for d in pool.imap(_format_to_bert, a_lst):
@@ -220,7 +232,8 @@ def tokenize(args):
     stories_dir = os.path.abspath(args.raw_path)
     tokenized_stories_dir = os.path.abspath(args.save_path)
 
-    print("Preparing to tokenize %s to %s..." % (stories_dir, tokenized_stories_dir))
+    print("Preparing to tokenize %s to %s..." % (stories_dir,
+                                                 tokenized_stories_dir))
     stories = os.listdir(stories_dir)
     # make IO list file
     print("Making list of files to tokenize...")
@@ -229,8 +242,14 @@ def tokenize(args):
             if (not s.endswith('story')):
                 continue
             f.write("%s\n" % (os.path.join(stories_dir, s)))
-    command = ['java', 'edu.stanford.nlp.pipeline.StanfordCoreNLP' ,'-annotators', 'tokenize,ssplit', '-ssplit.newlineIsSentenceBreak', 'always', '-filelist', 'mapping_for_corenlp.txt', '-outputFormat', 'json', '-outputDirectory', tokenized_stories_dir]
-    print("Tokenizing %i files in %s and saving in %s..." % (len(stories), stories_dir, tokenized_stories_dir))
+    command = [
+        'java', 'edu.stanford.nlp.pipeline.StanfordCoreNLP', '-annotators',
+        'tokenize,ssplit', '-ssplit.newlineIsSentenceBreak', 'always',
+        '-filelist', 'mapping_for_corenlp.txt', '-outputFormat', 'json',
+        '-outputDirectory', tokenized_stories_dir
+    ]
+    print("Tokenizing %i files in %s and saving in %s..." %
+          (len(stories), stories_dir, tokenized_stories_dir))
     subprocess.call(command)
     print("Stanford CoreNLP Tokenizer has finished.")
     os.remove("mapping_for_corenlp.txt")
@@ -240,9 +259,10 @@ def tokenize(args):
     num_tokenized = len(os.listdir(tokenized_stories_dir))
     if num_orig != num_tokenized:
         raise Exception(
-            "The tokenized stories directory %s contains %i files, but it should contain the same number as %s (which has %i files). Was there an error during tokenization?" % (
-            tokenized_stories_dir, num_tokenized, stories_dir, num_orig))
-    print("Successfully finished tokenizing %s to %s.\n" % (stories_dir, tokenized_stories_dir))
+            "The tokenized stories directory %s contains %i files, but it should contain the same number as %s (which has %i files). Was there an error during tokenization?"
+            % (tokenized_stories_dir, num_tokenized, stories_dir, num_orig))
+    print("Successfully finished tokenizing %s to %s.\n" %
+          (stories_dir, tokenized_stories_dir))
 
 
 def _format_to_bert(params):
@@ -266,8 +286,14 @@ def _format_to_bert(params):
         if (b_data is None):
             continue
         indexed_tokens, labels, segments_ids, cls_ids, src_txt, tgt_txt = b_data
-        b_data_dict = {"src": indexed_tokens, "labels": labels, "segs": segments_ids, 'clss': cls_ids,
-                       'src_txt': src_txt, "tgt_txt": tgt_txt}
+        b_data_dict = {
+            "src": indexed_tokens,
+            "labels": labels,
+            "segs": segments_ids,
+            'clss': cls_ids,
+            'src_txt': src_txt,
+            "tgt_txt": tgt_txt
+        }
         datasets.append(b_data_dict)
     logger.info('Saving to %s' % save_file)
     torch.save(datasets, save_file)
@@ -279,18 +305,21 @@ def format_to_lines(args):
     corpus_mapping = {}
     for corpus_type in ['valid', 'test', 'train']:
         temp = []
-        for line in open(pjoin(args.map_path, 'mapping_' + corpus_type + '.txt')):
+        for line in open(
+                pjoin(args.map_path, 'cnn_mapping_' + corpus_type + '.txt')):
             temp.append(hashhex(line.strip()))
         corpus_mapping[corpus_type] = {key.strip(): 1 for key in temp}
     train_files, valid_files, test_files = [], [], []
     for f in glob.glob(pjoin(args.raw_path, '*.json')):
-        real_name = f.split('/')[-1].split('.')[0]
+        real_name = f.split('\\')[-1].split('.')[0]
         if (real_name in corpus_mapping['valid']):
             valid_files.append(f)
         elif (real_name in corpus_mapping['test']):
             test_files.append(f)
         elif (real_name in corpus_mapping['train']):
             train_files.append(f)
+        else:
+            print('Not in list {}'.format(real_name))
 
     corpora = {'train': train_files, 'valid': valid_files, 'test': test_files}
     for corpus_type in ['train', 'valid', 'test']:
@@ -301,7 +330,8 @@ def format_to_lines(args):
         for d in pool.imap_unordered(_format_to_lines, a_lst):
             dataset.append(d)
             if (len(dataset) > args.shard_size):
-                pt_file = "{:s}.{:s}.{:d}.json".format(args.save_path, corpus_type, p_ct)
+                pt_file = "{:s}.{:s}.{:d}.json".format(args.save_path,
+                                                       corpus_type, p_ct)
                 with open(pt_file, 'w') as save:
                     # save.write('\n'.join(dataset))
                     save.write(json.dumps(dataset))
@@ -311,7 +341,8 @@ def format_to_lines(args):
         pool.close()
         pool.join()
         if (len(dataset) > 0):
-            pt_file = "{:s}.{:s}.{:d}.json".format(args.save_path, corpus_type, p_ct)
+            pt_file = "{:s}.{:s}.{:d}.json".format(args.save_path, corpus_type,
+                                                   p_ct)
             with open(pt_file, 'w') as save:
                 # save.write('\n'.join(dataset))
                 save.write(json.dumps(dataset))
